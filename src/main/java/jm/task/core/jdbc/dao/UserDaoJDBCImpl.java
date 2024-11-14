@@ -13,20 +13,29 @@ import java.util.List;
 
 public class UserDaoJDBCImpl implements UserDao {
 
-    public UserDaoJDBCImpl() {
+    private Connection connection;
+    private Statement statement;
 
+    public UserDaoJDBCImpl() {
+        try {
+            this.connection = Util.getConnection();
+            this.statement = connection.createStatement();
+            connection.setAutoCommit(false);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public void createUsersTable() {
-        try (Connection connection = Util.getConnection();
-             Statement statement = connection.createStatement()) {
+        try {
             statement.execute("CREATE TABLE IF NOT EXISTS user ("
                     + "`id` INT NOT NULL AUTO_INCREMENT,"
                     + "`name` VARCHAR(45) NOT NULL,"
                     + "`lastName` VARCHAR(45) NOT NULL,"
                     + "`age` INT(3) NOT NULL,"
                     + "PRIMARY KEY (`id`));");
+            connection.commit();
         } catch (SQLException e) {
             System.err.println(e.getMessage());
         }
@@ -34,9 +43,9 @@ public class UserDaoJDBCImpl implements UserDao {
 
     @Override
     public void dropUsersTable() {
-        try (Connection connection = Util.getConnection();
-             Statement statement = connection.createStatement()) {
-            statement.execute("Drop table user");
+        try {
+            statement.execute("Drop table if exists user");
+            connection.commit();
         } catch (SQLException e) {
             System.err.println(e.getMessage());
         }
@@ -44,16 +53,17 @@ public class UserDaoJDBCImpl implements UserDao {
 
     @Override
     public void saveUser(String name, String lastName, byte age) {
-        String sql = "START TRANSACTION; INSERT INTO user (name, lastName, age) VALUES (?, ?, ?); COMMIT";
-        try (Connection connection = Util.getConnection();
-             PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+        String sql = "INSERT INTO user (name, lastName, age) VALUES (?, ?, ?)";
+        try {
+            PreparedStatement preparedStatement = connection.prepareStatement(sql);
             preparedStatement.setString(1, name);
             preparedStatement.setString(2, lastName);
             preparedStatement.setInt(3, age);
             try {
                 preparedStatement.executeUpdate();
+                connection.commit();
             } catch (SQLException e) {
-                preparedStatement.executeUpdate("ROLLBACK");
+                connection.rollback();
             }
             System.out.println("User с именем - " + name + " добавлен в базу данных");
         } catch (SQLException e) {
@@ -63,14 +73,15 @@ public class UserDaoJDBCImpl implements UserDao {
 
     @Override
     public void removeUserById(long id) {
-        String sql = "START TRANSACTION ;DELETE FROM user WHERE id = ?; COMMIT";
-        try (Connection connection = Util.getConnection();
-             PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+        String sql = "DELETE FROM user WHERE id = ?";
+        try {
+            PreparedStatement preparedStatement = connection.prepareStatement(sql);
             preparedStatement.setLong(1, id);
             try {
                 preparedStatement.executeUpdate();
+                connection.commit();
             } catch (SQLException e) {
-                preparedStatement.executeUpdate("ROLLBACK");
+                connection.rollback();
             }
         } catch (SQLException e) {
             System.err.println(e.getMessage());
@@ -80,8 +91,7 @@ public class UserDaoJDBCImpl implements UserDao {
     @Override
     public List<User> getAllUsers() {
         List<User> users = new ArrayList<>();
-        try (Connection connection = Util.getConnection();
-             Statement statement = connection.createStatement()) {
+        try {
             ResultSet rs = statement.executeQuery("SELECT * FROM user");
             while (rs.next()) {
                 users.add(new User(rs.getString("name"),
@@ -97,13 +107,18 @@ public class UserDaoJDBCImpl implements UserDao {
 
     @Override
     public void cleanUsersTable() {
-        try (Connection connection = Util.getConnection();
-             Statement statement = connection.createStatement()) {
-            try {
-                statement.executeUpdate("START TRANSACTION; truncate user; COMMIT ");
-            } catch (SQLException e) {
-                statement.executeUpdate("ROLLBACK");
-            }
+        try {
+            statement.executeUpdate("truncate user");
+            connection.commit();
+        } catch (SQLException e) {
+            System.err.println(e.getMessage());
+        }
+    }
+
+    @Override
+    public void closeConnection() {
+        try {
+            connection.close();
         } catch (SQLException e) {
             System.err.println(e.getMessage());
         }
